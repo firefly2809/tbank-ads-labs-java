@@ -1,14 +1,57 @@
 package ru.tbank.ads.labs.lab_10.task5;
 
+import java.io.*;
 import java.util.*;
 
 class Query {
-    int l, r, index;
-
-    Query(int l, int r, int index) {
+    int l, r, idx;
+    Query(int l, int r, int idx) {
         this.l = l;
         this.r = r;
-        this.index = index;
+        this.idx = idx;
+    }
+}
+
+class SegmentTree {
+    int n;
+    int[] tree;
+
+    SegmentTree(int size) {
+        n = size;
+        tree = new int[4 * n];
+    }
+
+    void update(int v, int tl, int tr, int pos, int delta) {
+        if (tl == tr) {
+            tree[v] += delta;
+        } else {
+            int tm = (tl + tr) / 2;
+            if (pos <= tm) {
+                update(v * 2, tl, tm, pos, delta);
+            } else {
+                update(v * 2 + 1, tm + 1, tr, pos, delta);
+            }
+            tree[v] = tree[v * 2] + tree[v * 2 + 1];
+        }
+    }
+
+    int query(int v, int tl, int tr, int l, int r) {
+        if (l > r) return 0;
+        if (l == tl && r == tr) {
+            return tree[v];
+        }
+        int tm = (tl + tr) / 2;
+        return query(v * 2, tl, tm, l, Math.min(r, tm)) +
+                query(v * 2 + 1, tm + 1, tr, Math.max(l, tm + 1), r);
+    }
+
+    // Удобные методы
+    void update(int pos, int delta) {
+        update(1, 0, n - 1, pos, delta);
+    }
+
+    int query(int l, int r) {
+        return query(1, 0, n - 1, l, r);
     }
 }
 
@@ -17,74 +60,72 @@ public class Task5 {
     static int[] count;
     static int currentUniqueCount = 0;
 
-    public static void main(String[] args) {
-        a = new int[]{1, 2, 1, 3, 2, 1, 4, 5}; // Пример массива
-        int q = 4; // Количество запросов
+    public static void main(String[] args) throws IOException {
+
+        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
+        PrintWriter out = new PrintWriter(System.out);
+
+        // Чтение n
+        int n = Integer.parseInt(br.readLine());
+        int[] a = new int[n];
+        String[] tokens = br.readLine().split(" ");
+        for (int i = 0; i < n; i++) {
+            a[i] = Integer.parseInt(tokens[i]);
+        }
+
+        // Чтение q
+        int q = Integer.parseInt(br.readLine());
         Query[] queries = new Query[q];
-
-        // Пример запросов
-        queries[0] = new Query(0, 3, 0); // [1, 2, 1, 3]
-        queries[1] = new Query(1, 5, 1); // [2, 1, 3, 2, 1]
-        queries[2] = new Query(2, 6, 2); // [1, 3, 2, 1, 4]
-        queries[3] = new Query(0, 7, 3); // [1, 2, 1, 3, 2, 1, 4, 5]
-
-        int[] results = processQueries(queries);
-
-        // Вывод результатов
-        for (int result : results) {
-            System.out.println(result);
-        }
-    }
-
-    public static int[] processQueries(Query[] queries) {
-        int n = a.length;
-        int[] results = new int[queries.length];
-        count = new int[100001]; // Предполагаем, что значения в a <= 100000
-        int currentL = 0, currentR = -1;
-
-        // Сортируем запросы по блокам и по правой границе
-        Arrays.sort(queries, (q1, q2) -> {
-            int blockSize = (int) Math.sqrt(n);
-            if (q1.l / blockSize != q2.l / blockSize) {
-                return Integer.compare(q1.l / blockSize, q2.l / blockSize);
-            }
-            return Integer.compare(q1.r, q2.r);
-        });
-
-        for (Query query : queries) {
-            while (currentR < query.r) {
-                currentR++;
-                add(a[currentR]);
-            }
-            while (currentR > query.r) {
-                remove(a[currentR]);
-                currentR--;
-            }
-            while (currentL < query.l) {
-                remove(a[currentL]);
-                currentL++;
-            }
-            while (currentL > query.l) {
-                currentL--;
-                add(a[currentL]);
-            }
-            results[query.index] = currentUniqueCount;
+        for (int i = 0; i < q; i++) {
+            tokens = br.readLine().split(" ");
+            int l = Integer.parseInt(tokens[0]) - 1; // в 0-индексацию
+            int r = Integer.parseInt(tokens[1]) - 1;
+            queries[i] = new Query(l, r, i);
         }
 
-        return results;
-    }
+        // Сортируем запросы по r (правой границе)
+        Arrays.sort(queries, Comparator.comparingInt(x -> x.r));
 
-    private static void add(int value) {
-        if (count[value] == 0) {
-            currentUniqueCount++;
-        }
-        count[value]++;
-    }
+        // Максимальное значение для last[] — можно использовать Map, если значения большие
+        // Предположим, что значения до 1_000_000
+        final int MAX_VAL = 10;
+        int[] last = new int[MAX_VAL + 1];
+        Arrays.fill(last, -1);
 
-    private static void remove(int value) {
-        if (count[value] == 1) {
-            currentUniqueCount--;
+        SegmentTree segTree = new SegmentTree(n);
+        int[] ans = new int[q];
+        int qIdx = 0;
+
+        // Основной цикл: двигаем r от 0 до n-1
+        for (int r = 0; r < n; r++) {
+            int val = a[r];
+
+            // Если это не первое вхождение — удаляем предыдущее
+            if (val >= 0 && val <= MAX_VAL && last[val] != -1) {
+                segTree.update(last[val], -1);
+            }
+
+            // Ставим 1 на текущую позицию
+            segTree.update(r, 1);
+            last[val] = r;
+
+            // Отвечаем на все запросы с r == текущему
+            while (qIdx < q && queries[qIdx].r == r) {
+                Query query = queries[qIdx];
+                int res = segTree.query(query.l, query.r);
+                ans[query.idx] = res;
+                qIdx++;
+            }
         }
-        count[value]--;
+
+        // Вывод ответов
+        for (int x : ans) {
+            out.println(x);
+        }
+
+        out.flush();
+        out.close();
+        br.close();
     }
 }
+
